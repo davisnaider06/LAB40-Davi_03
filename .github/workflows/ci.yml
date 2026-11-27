@@ -1,0 +1,94 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: lab40
+
+jobs:
+  qualidade-e-testes:
+    name: Qualidade, testes e auditoria
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalação reproduzível (npm ci)
+        run: npm ci
+
+      - name: Verificação de formatação (Prettier)
+        run: npm run format:check
+
+      - name: Análise estática (ESLint)
+        run: npm run lint
+
+      - name: Testes automatizados (node:test)
+        run: npm run test:spec
+
+      - name: Smoke test (/health, /api/features, feature 03)
+        run: npm run test:smoke
+
+      - name: Auditoria de dependências
+        run: npm audit --audit-level=high
+
+  docker:
+    name: Build e teste da imagem Docker
+    runs-on: ubuntu-latest
+    needs: qualidade-e-testes
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Definir tag da imagem (SHA curto)
+        run: echo "IMAGE_TAG=feature03-${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+      - name: Build da imagem
+        run: docker build --pull -t "$IMAGE_NAME:$IMAGE_TAG" .
+
+      - name: Executar container efêmero
+        run: |
+          docker run -d --name lab40-ci -p 3000:3000 "$IMAGE_NAME:$IMAGE_TAG"
+          docker ps
+          for i in $(seq 1 20); do
+            curl -sf http://localhost:3000/health && break
+            sleep 1
+          done
+
+      - name: Validar /health no container
+        run: curl --fail -s http://localhost:3000/health
+
+      - name: Validar endpoint da feature 03 no container
+        run: |
+          RESP=$(curl --fail -s -X POST http://localhost:3000/api/features/3 \
+            -H "Content-Type: application/json" -d '{"valor":100,"acrescimo":12}')
+          echo "$RESP"
+          echo "$RESP" | grep -q '"total":112'
+
+      - name: Logs e remoção do container
+        if: always()
+        run: |
+          docker logs lab40-ci || true
+          docker rm -f lab40-ci || true
+
+      - name: Exportar imagem (.tar)
+        run: docker save "$IMAGE_NAME:$IMAGE_TAG" -o "lab40-$IMAGE_TAG.tar"
+
+      - name: Armazenar imagem como artefato
+        uses: actions/upload-artifact@v4
+        with:
+          name: lab40-image-${{ env.IMAGE_TAG }}
+          path: lab40-${{ env.IMAGE_TAG }}.tar
+          retention-days: 7

@@ -1,15 +1,32 @@
 // Funcionalidade 03: Calculadora de acréscimo.
 // Objetivo: Aplica acréscimo percentual a um valor.
-// Exemplo de entrada: { valor: 100, acrescimo: 12 }
-// Implemente conforme as regras e critérios do enunciado fornecido pelo professor.
+// Exemplo de entrada: { valor: 100, acrescimo: 12 } -> { total: 112 }
+// Política de arredondamento: o total é arredondado para 2 casas decimais
+// (padrão monetário), evitando resíduos de ponto flutuante como 11.550000000000001.
 
-const implemented = false;
+const implemented = true;
 
-// Desenvolva a regra de negócio e valide todos os dados de entrada.
+// Verifica se o campo é um número finito e não negativo.
+function validarNumero(nome, valor) {
+  if (typeof valor !== "number" || !Number.isFinite(valor)) {
+    throw new Error(`O campo "${nome}" é obrigatório e deve ser um número finito.`);
+  }
+  if (valor < 0) {
+    throw new Error(`O campo "${nome}" não pode ser negativo.`);
+  }
+}
+
+// Aplica o acréscimo percentual sem modificar o objeto de entrada.
 function execute(input) {
-  // TODO: substituir este bloco pela implementação testada da funcionalidade.
-  void input;
-  throw new Error("Funcionalidade ainda não implementada.");
+  if (input === null || typeof input !== "object" || Array.isArray(input)) {
+    throw new Error("Informe um objeto com os campos valor e acrescimo.");
+  }
+  const { valor, acrescimo } = input;
+  validarNumero("valor", valor);
+  validarNumero("acrescimo", acrescimo);
+
+  const total = Math.round(valor * (1 + acrescimo / 100) * 100) / 100;
+  return { total };
 }
 
 // Mantém o contrato de integração utilizado pela API central.
@@ -18,5 +35,5 @@ module.exports = {
   name: "Calculadora de acréscimo",
   description: "Aplica acréscimo percentual a um valor.",
   implemented,
-  execute
+  execute,
 };
