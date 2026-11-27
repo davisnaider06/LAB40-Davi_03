@@ -1,0 +1,76 @@
+name: CD (simulado)
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  IMAGE_NAME: lab40
+
+jobs:
+  entrega:
+    name: Entrega simulada
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Verificações antes da entrega
+        run: |
+          npm ci
+          npm run lint
+          npm test
+          npm run test:smoke
+
+      - name: Definir tag da imagem (SHA curto)
+        run: echo "IMAGE_TAG=feature03-${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+      - name: Build da imagem
+        run: docker build --pull -t "$IMAGE_NAME:$IMAGE_TAG" .
+
+      - name: Validar container antes de entregar
+        run: |
+          docker run -d --name lab40-cd -p 3000:3000 "$IMAGE_NAME:$IMAGE_TAG"
+          for i in $(seq 1 20); do curl -sf http://localhost:3000/health && break; sleep 1; done
+          curl --fail -s http://localhost:3000/health
+          curl --fail -s -X POST http://localhost:3000/api/features/3 \
+            -H "Content-Type: application/json" -d '{"valor":100,"acrescimo":12}'
+          docker rm -f lab40-cd
+
+      - name: Exportar imagem (.tar)
+        run: docker save "$IMAGE_NAME:$IMAGE_TAG" -o "lab40-$IMAGE_TAG.tar"
+
+      - name: Gerar deployment-record.txt
+        run: |
+          {
+            echo "LAB40 - Registro de entrega (CD simulado)"
+            echo "repositorio=${GITHUB_REPOSITORY}"
+            echo "referencia=${GITHUB_REF}"
+            echo "sha=${GITHUB_SHA}"
+            echo "imagem=${IMAGE_NAME}:${IMAGE_TAG}"
+            echo "image_id=$(docker image inspect --format '{{.Id}}' "$IMAGE_NAME:$IMAGE_TAG")"
+            echo "arquivo=lab40-${IMAGE_TAG}.tar"
+            echo "sha256_tar=$(sha256sum "lab40-${IMAGE_TAG}.tar" | cut -d' ' -f1)"
+            echo "workflow_run=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "data_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > deployment-record.txt
+          cat deployment-record.txt
+
+      - name: Publicar artefato de entrega
+        uses: actions/upload-artifact@v4
+        with:
+          name: lab40-delivery-record
+          path: |
+            lab40-${{ env.IMAGE_TAG }}.tar
+            deployment-record.txt
+          retention-days: 7

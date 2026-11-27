@@ -1,0 +1,8 @@
+node_modules/
+coverage/
+test-results/
+*.log
+*.tar
+.env
+.env.*
+.DS_Store
